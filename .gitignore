@@ -1,0 +1,6 @@
+/node_modules/
+/nohup.out
+/nohup.err
+/.idea
+bundle.js
+.DS_Store
