@@ -84,21 +84,30 @@ function createMerkle(content, fileName) {
   }
 
   // process input file
-  let list = content.replace(/\r/g, "").split(/\n/); // read UID and balance from input file
-  let balances_hash = [];
+  let list = content.replace(/\r/g, "")
+    .split(/\n/)
+    // If the file ends with \n we would get an empty column at the end which will throw down the line
+    .filter(data => data.length > 0);
+
+  // read UID and balance from input file
+  const balances_hash = [];
   let totalBalance1 = Big("0.0");
   let totalBalance2 = Big("0.0");
   let totalBalance3 = Big("0.0");
   let totalBalance4 = Big("0.0");
 
-  for (var i = 0; i < list.length; i++) {
-    var row = list[i];
-    if (row[0] == "#") {
+  for (let i = 0; i < list.length; i++) {
+    const row = list[i];
+
+    // Check if we are in the header row and skip
+    if (row[0] === "#") {
       continue;
     }
-    var data = row.split(",");
+    const data = row.split(",");
+
     if (data.length !== 5) {
-      continue;
+      alert(`Please review the input file. Found ${data.length} columns at position ${i} instead of the expected 5`);
+      return;
     }
 
     const [uid, balance1, balance2, balance3, balance4] = data;
@@ -110,10 +119,10 @@ function createMerkle(content, fileName) {
     const balance = balance1 + balance2 + balance3 + balance4;
 
     //concatenate id and balances to form transaction data
-    var uid_hash = SHA256(uid);
-    var balance_hash = SHA256(balance);
+    const uid_hash = SHA256(uid);
+    const balance_hash = SHA256(balance);
 
-    balances_hash.push(uid_hash + balance_hash); // underlying data to build Merkle tree
+    balances_hash.push(uid_hash.toString() + balance_hash.toString()); // underlying data to build Merkle tree
   }
   // construct leaves and shorten hashed value in leaves
   const leaves = balances_hash.map((x) =>
@@ -197,18 +206,21 @@ function verifyMerkle(VerifyTXT, params) {
   list.splice(0, 1); // remove header row
   let leaves = [];
   let nodesLocation = undefined;
-  for (var i = 0; i < list.length; i++) {
-    var l = list[i];
-    if (l[0] == "#") continue;
-    var c = l.split("\t");
-    if (c.length != 2) continue;
-    var hash = c[1].trim();
+  for (let i = 0; i < list.length; i++) {
+    const l = list[i];
+    if (l[0] === "#") continue;
+    const c = l.split("\t");
+    if (c.length !== 2) {
+      alert(`Expected 2 columns at location ${i} but found ${c.length} instead`)
+      return;
+    }
+    const hash = c[1].trim();
     leaves.push(hash);
     if (leafStr === hash) {
       nodesLocation = i;
     }
   }
-  if (nodesLocation == undefined) {
+  if (nodesLocation === undefined) {
     alert("Could not find your information in the Merkle Tree.");
     return;
   }
