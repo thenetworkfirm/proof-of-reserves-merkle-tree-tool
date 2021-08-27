@@ -4,3 +4,5 @@
 /.idea
 bundle.js
 .DS_Store
+output_*
+*.csv
