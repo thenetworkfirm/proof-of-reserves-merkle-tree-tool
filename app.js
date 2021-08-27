@@ -60,15 +60,6 @@ $(function () {
 });
 
 /**
- * convert given string into hex format
- * @param value
- * @returns {string}
- */
-function bufferToString(value) {
-  return value.toString("hex");
-}
-
-/**
  * build Merkle tree using input data, and save the data of leaf nodes in resTxt
  * @method merkle
  * @param {String} content of input file
@@ -77,7 +68,7 @@ function bufferToString(value) {
  */
 function createMerkle(content, fileName) {
 
-  let output = buildMerkle(content, fileName);
+  let [output, tokens, total_balances, tree] = buildMerkle(content, fileName);
   // save the Merkle tree data as verify file
   let resFileName = fileName.split(".")[0];
   resFileName += "_merkletree.txt";
@@ -86,12 +77,12 @@ function createMerkle(content, fileName) {
   });
   saveAs(file);
 
-  $(".rootHash").html(bufferToString(tree.getRoot()));
-  $(".rowsNum").html(leavesFromTree.length);
-  $(".totalBalance1").html(totalBalance1.toFixed());
-  $(".totalBalance2").html(totalBalance2.toFixed());
-  $(".totalBalance3").html(totalBalance3.toFixed());
-  $(".totalBalance4").html(totalBalance4.toFixed());
+  $(".rootHash").html(tree.getRoot().toString("hex"));
+  $(".rowsNum").html(tree.getLeaves().length);
+  $(".totalBalance1").html(total_balances[0].toFixed());
+  $(".totalBalance2").html(total_balances[1].toFixed());
+  $(".totalBalance3").html(total_balances[2].toFixed());
+  $(".totalBalance4").html(total_balances[3].toFixed());
 }
 
 /**
@@ -163,7 +154,7 @@ function verifyMerkle(VerifyTXT, params) {
 
   // construct Merkle tree without hashing the leaves
   const tree = new MerkleTree(leaves, SHA256, options);
-  const root = bufferToString(tree.getRoot());
+  const root = tree.getRoot().toString("hex");
   $(".computedRootHash").html(root);
 
   const proof = tree.getProof(leafStr);
