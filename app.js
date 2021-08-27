@@ -1,10 +1,8 @@
-const Big = require("big.js");
 const { MerkleTree } = require("merkletreejs");
 const SHA256 = require("crypto-js/sha256");
+const { buildMerkle } = require('./cli');
 
 const LEAVES_HASH_LEN = 16;
-const DELIMITER = "\t";
-const NEW_LINE = "\r\n";
 
 let rawFile, merkleFile;
 /**
@@ -78,75 +76,8 @@ function bufferToString(value) {
  * @return {JSON} root rowsNum totalBalance
  */
 function createMerkle(content, fileName) {
-  if (!fileName || !content) {
-    alert("Please choose a file with valid balances!");
-    return;
-  }
 
-  // process input file
-  let list = content.replace(/\r/g, "")
-    .split(/\n/)
-    // If the file ends with \n we would get an empty column at the end which will throw down the line
-    .filter(data => data.length > 0);
-
-  // read UID and balance from input file
-  const balances_hash = [];
-  let totalBalance1 = Big("0.0");
-  let totalBalance2 = Big("0.0");
-  let totalBalance3 = Big("0.0");
-  let totalBalance4 = Big("0.0");
-
-  for (let i = 0; i < list.length; i++) {
-    const row = list[i];
-
-    // Check if we are in the header row and skip
-    if (row[0] === "#") {
-      continue;
-    }
-    const data = row.split(",");
-
-    if (data.length !== 5) {
-      alert(`Please review the input file. Found ${data.length} columns at position ${i} instead of the expected 5`);
-      return;
-    }
-
-    const [uid, balance1, balance2, balance3, balance4] = data;
-    totalBalance1 = totalBalance1.add(balance1);
-    totalBalance2 = totalBalance2.add(balance2);
-    totalBalance3 = totalBalance3.add(balance3);
-    totalBalance4 = totalBalance4.add(balance4);
-
-    const balance = balance1 + balance2 + balance3 + balance4;
-
-    //concatenate id and balances to form transaction data
-    const uid_hash = SHA256(uid);
-    const balance_hash = SHA256(balance);
-
-    balances_hash.push(uid_hash.toString() + balance_hash.toString()); // underlying data to build Merkle tree
-  }
-  // construct leaves and shorten hashed value in leaves
-  const leaves = balances_hash.map((x) =>
-    SHA256(x).toString().substring(0, LEAVES_HASH_LEN)
-  );
-  // build Merlke tree
-  const tree = new MerkleTree(leaves, SHA256);
-
-  let treeLevels = tree.getLayers().length;
-  let leavesFromTree = tree.getLeaves();
-  let output = "Level" + DELIMITER + "Hash" + NEW_LINE;
-  for (let i = 0; i < leavesFromTree.length; i++) {
-    // write only the leaf nodes of the Merkle tree into verification file, all letters in lower case
-    output +=
-      treeLevels +
-      "," +
-      i.toString() +
-      DELIMITER +
-      // shorten hashed value in leaves
-      bufferToString(leavesFromTree[i]) +
-      NEW_LINE;
-  }
-  console.log("Merkle tree complete");
-
+  let output = buildMerkle(content, fileName);
   // save the Merkle tree data as verify file
   let resFileName = fileName.split(".")[0];
   resFileName += "_merkletree.txt";
