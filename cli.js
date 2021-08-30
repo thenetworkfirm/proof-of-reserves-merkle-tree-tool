@@ -8,18 +8,10 @@ const LEAVES_HASH_LEN = 16;
 const DELIMITER = "\t";
 const NEW_LINE = "\r\n";
 
-const fileName = "input.csv";
-
-function buildMerkle(content, fileName, concatenate=false) {
-  if (!fileName || !content) {
+function buildMerkle(content, concatenate=false) {
+  if (!content) {
     throw new Error("Please choose a file with valid balances!");
   }
-
-  // process input file
-  let list = content.replace(/\r/g, "")
-    .split(/\n/)
-    // If the file ends with \n we would get an empty column at the end which will throw down the line
-    .filter(data => data.length > 0);
 
   // read UID and balance from input file
   const balances_hash = [];
@@ -28,9 +20,11 @@ function buildMerkle(content, fileName, concatenate=false) {
   let columns;
   let tokens;
 
+  const list = content.split(/\r?\n/);
+
   for (let i = 0; i < list.length; i++) {
     const row = list[i];
-    const data = row.split(",");
+    const data = row.split(",").map(item => item.trim());
 
     // Check if we are in the header row, save the columns and skip
     if (row[0] === "#") {
@@ -66,7 +60,7 @@ function buildMerkle(content, fileName, concatenate=false) {
       const string_to_hash = `${uid_hash},${tokens.map((token, i) => [token, sanitized_balances[i]].join(":")).join(",")}`
       balances_hash.push(string_to_hash)
     } else {
-      const balance_hash = SHA256(sum_of_balances.toNumber());
+      const balance_hash = SHA256(sum_of_balances.toString());
 
       balances_hash.push(uid_hash.toString() + balance_hash.toString()); // underlying data to build Merkle tree
     }
@@ -101,17 +95,18 @@ async function main() {
 
   program
     .option('-c, --concatenate', 'If set, compute the leaves as SHA256(user_id,balance1:k,...,balancen:n)')
+    .option('-i, --input', 'Input filename. Defaults to input.csv')
 
   program.parse()
 
-  const { concatenate } = program.opts()
+  const { concatenate, input } = program.opts()
 
-  let content = fs.readFileSync('input.csv').toString()
+  let content = fs.readFileSync(input || 'input.csv', { encoding: 'utf-8' }).toString().trim()
 
   try {
-    const [output, tokens, total_balances, tree] = buildMerkle(content, fileName, !!concatenate);
+    const [output, tokens, total_balances, tree] = buildMerkle(content, !!concatenate);
     fs.writeFileSync('output_merkle_tree.txt', output)
-    fs.writeFileSync('output_total_balances.txt', `${tokens.map((token, i) => `${token}:${total_balances[i].toString()}${NEW_LINE}`)}`)
+    fs.writeFileSync('output_total_balances.txt', `${tokens.map((token, i) => `${token}:${total_balances[i].toString()}`).join(NEW_LINE)}`)
     fs.writeFileSync('output_merkle_root.txt', tree.getRoot().toString("hex"))
   } catch (e) {
     console.error(e);
@@ -120,10 +115,3 @@ async function main() {
 }
 
 main();
-
-
-module.exports = {
-  buildMerkle,
-  DELIMITER,
-  NEW_LINE
-}
