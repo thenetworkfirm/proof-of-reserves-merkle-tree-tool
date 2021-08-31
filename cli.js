@@ -6,7 +6,7 @@ const { Command } = require('commander');
 
 const LEAVES_HASH_LEN = 16;
 const DELIMITER = "\t";
-const NEW_LINE = "\r\n";
+let NEW_LINE = "\r\n";
 
 function buildMerkle(content, concatenate=false) {
   if (!content) {
@@ -14,8 +14,8 @@ function buildMerkle(content, concatenate=false) {
   }
 
   // read UID and balance from input file
-  const balances_hash = [];
-  const total_balances = []
+  const total_balances = [];
+  const leaves = [];
 
   let columns;
   let tokens;
@@ -29,7 +29,7 @@ function buildMerkle(content, concatenate=false) {
     // Check if we are in the header row, save the columns and skip
     if (row[0] === "#") {
       columns = data;
-      tokens = columns.filter(column => !column.startsWith("#"))
+      tokens = columns.filter(column => !column.startsWith("#"));
       continue;
     }
 
@@ -43,32 +43,29 @@ function buildMerkle(content, concatenate=false) {
 
     const [uid, ...balances] = data;
 
-    const sum_of_balances = balances.reduce((sum, balance, i) => {
+    balances.forEach((balance, i) => {
       if (total_balances[i]) {
         total_balances[i] = total_balances[i].add(balance)
       } else {
         total_balances[i] = Big(balance)
       }
-      return sum.add(balance)
-    }, Big(0));
+    });
 
-
-    const uid_hash = SHA256(uid);
     if (concatenate) {
       // Remove trailing zeroes using https://stackoverflow.com/a/53397618/1231428
-      const sanitized_balances = balances.map(balance => balance.replace(/(\.[0-9]*[1-9])0+$|\.0*$/,"$1"))
-      const string_to_hash = `${uid_hash},${tokens.map((token, i) => [token, sanitized_balances[i]].join(":")).join(",")}`
-      balances_hash.push(string_to_hash)
-    } else {
-      const balance_hash = SHA256(sum_of_balances.toString());
+      const sanitized_balances = balances.map(balance => balance.replace(/(\.[0-9]*[1-9])0+$|\.0*$/,"$1"));
+      const string_to_hash = `${uid},${tokens.map((token, i) => [token, sanitized_balances[i]].join(":")).join(",")}`;
+      leaves.push(SHA256(string_to_hash));
 
-      balances_hash.push(uid_hash.toString() + balance_hash.toString()); // underlying data to build Merkle tree
+    } else {
+      const uid_hash = SHA256(uid);
+      const concatenated_balances = balances.join('');
+      const balance_hash = SHA256(concatenated_balances.toString());
+
+      leaves.push(SHA256(uid_hash.toString() + balance_hash.toString()).toString().substring(0, LEAVES_HASH_LEN)); // underlying data to build Merkle tree
     }
   }
-  // construct leaves and shorten hashed value in leaves
-  const leaves = balances_hash.map((x) =>
-    SHA256(x).toString().substring(0, LEAVES_HASH_LEN)
-  );
+
   // build Merkle tree
   const tree = new MerkleTree(leaves, SHA256);
 
@@ -94,17 +91,22 @@ async function main() {
   const program = new Command();
 
   program
-    .option('-c, --concatenate', 'If set, compute the leaves as SHA256(user_id,balance1:k,...,balancen:n)')
-    .option('-i, --input', 'Input filename. Defaults to input.csv')
+    .option('-c, --concatenate', 'If set, compute the leaves as SHA256(user_id,balance1:k,...,balancen:n). Otherwise the calculation is SHA256(SHA256(user_id)SHA256(balance1...balancen))')
+    .option('-n, --newline <value>', 'Sets the type of line endings to expect from the input file. The output file will match this style. Possible options are crlf or lf. Defaults to crlf.', 'crlf')
+    .option('-i, --input <value>', 'Input filename. Defaults to input.csv', 'input.csv');
 
-  program.parse()
+  program.parse();
 
-  const { concatenate, input } = program.opts()
+  const { concatenate, input, newline, delimeter } = program.opts()
 
-  let content = fs.readFileSync(input || 'input.csv', { encoding: 'utf-8' }).toString().trim()
+  if (newline === 'lf') {
+    NEW_LINE = '\n'
+  }
 
   try {
+    const content = fs.readFileSync(input, { encoding: 'utf-8' }).toString().trim()
     const [output, tokens, total_balances, tree] = buildMerkle(content, !!concatenate);
+
     fs.writeFileSync('output_merkle_tree.txt', output)
     fs.writeFileSync('output_total_balances.txt', `${tokens.map((token, i) => `${token}:${total_balances[i].toString()}`).join(NEW_LINE)}`)
     fs.writeFileSync('output_merkle_root.txt', tree.getRoot().toString("hex"))
