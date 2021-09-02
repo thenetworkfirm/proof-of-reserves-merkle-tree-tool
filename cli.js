@@ -1,78 +1,69 @@
 const Big = require("big.js");
 const { MerkleTree } = require("merkletreejs");
-const SHA256 = require("crypto-js/sha256");
 const fs = require("fs");
+const crypto = require("crypto");
 const { Command } = require('commander');
 const readline = require('readline');
+const { start, stop, job } = require("microjob");
+const os = require("os")
+const jobHandler = require("./jobHandler").jobHandler
 
-const LEAVES_HASH_LEN = 16;
 const DELIMITER = "\t";
 let NEW_LINE = "\r\n";
+let THREADS = os.cpus().length - 1;
 
-function buildMerkle(content, concatenate=false) {
+function SHA256(data) {
+  return crypto.createHash('sha256').update(data).digest()
+}
+
+async function buildMerkle(content, headerRow, concatenate=false) {
   if (!content) {
     throw new Error("Please choose a file with valid balances!");
   }
 
-  // read UID and balance from input file
-  const total_balances = [];
+  if (!headerRow.startsWith("#")) {
+    throw new Error("Header row missing. Cannot proceed without it");
+  }
+
+  //start worker threads so we can make the cpu bound part faster
+  await start({ maxWorkers: THREADS });
 
   const merkle_output = fs.createWriteStream('output_merkle_tree.txt')
 
-  let columns;
-  let tokens;
+  const columns = headerRow.split(",").map(item => item.trim());
+  const tokens = columns.filter(column => !column.startsWith("#"));
+  const total_balances = new Array(columns.length);
 
-
-  for (let i = 0; i < content.length; i++) {
-    const row = content[i];
-    const data = row.split(",").map(item => item.trim());
-
-    // Check if we are in the header row, save the columns and skip
-    if (row[0] === "#") {
-      columns = data;
-      tokens = columns.filter(column => !column.startsWith("#"));
-      continue;
-    }
-
-    if (!columns) {
-      throw new Error("Header row missing. Cannot proceed without it");
-    }
-
-    if (data.length !== columns.length) {
-      throw new Error(`Please review the input file. Found ${data.length} columns at position ${i} instead of the expected ${columns.length}`);
-    }
-
-    const [uid, ...balances] = data;
-
-    balances.forEach((balance, i) => {
-      if (total_balances[i]) {
-        total_balances[i] = total_balances[i].add(balance)
-      } else {
-        total_balances[i] = Big(balance)
-      }
-    });
-
-    if (concatenate) {
-      // Remove trailing zeroes using https://stackoverflow.com/a/53397618/1231428
-      const sanitized_balances = balances.map(balance => balance.replace(/(\.[0-9]*[1-9])0+$|\.0*$/,"$1"));
-      const string_to_hash = `${uid},${tokens.map((token, i) => [token, sanitized_balances[i]].join(":")).join(",")}`;
-      content[i] = SHA256(string_to_hash)
-
-    } else {
-      const uid_hash = SHA256(uid);
-      const concatenated_balances = balances.join('');
-      const balance_hash = SHA256(concatenated_balances.toString());
-
-      content[i] = SHA256(uid_hash.toString() + balance_hash.toString()).toString().substring(0, LEAVES_HASH_LEN); // underlying data to build Merkle tree
-    }
+  let split_content = []
+  const chunk_size = THREADS * 64
+  for (let i=0, j= content.length - chunk_size; j > i; j -= chunk_size) {
+    split_content.push(content.splice(j > 0 ? j : 0))
   }
+  split_content.push(content)
+  split_content.reverse()
+
+  const res = await Promise.all(split_content.map(async part => {
+    part.forEach(p => {
+      const [uid, ...balances] = p.split(',')
+      balances.forEach((balance, index) => {
+        if (!total_balances[index]) total_balances[index] = Big(0)
+        total_balances[index] = total_balances[index].add(balance);
+      })
+    })
+    return job(jobHandler, { ctx: { part, columns, concatenate, tokens }})
+  }));
+
+  console.log("Leaf SHAing completed");
+
+  //stop the worker threads since we don't need them anymore
+  await stop();
+
 
   // build Merkle tree
-  const tree = new MerkleTree(content, SHA256);
+  const tree = new MerkleTree(res.flat(2), SHA256);
 
   let treeLevels = tree.getLayers().length;
   let leavesFromTree = tree.getLeaves();
-
 
   merkle_output.write("Level" + DELIMITER + "Hash" + NEW_LINE);
   for (let i = 0; i < leavesFromTree.length; i++) {
@@ -95,19 +86,27 @@ async function main() {
 
   program
     .option('-c, --concatenate', 'If set, compute the leaves as SHA256(user_id,balance1:k,...,balancen:n). Otherwise the calculation is SHA256(SHA256(user_id)SHA256(balance1...balancen))')
-    .option('-n, --newline <value>', 'Sets the type of line endings to expect from the input file. The output file will match this style. Possible options are crlf or lf. Defaults to crlf.', 'crlf')
-    .option('-i, --input <value>', 'Input filename. Defaults to input.csv', 'input.csv');
+    .option('-n, --newline <value>', 'Sets the type of line endings to expect from the input file. The output file will match this style. Possible options are crlf or lf.', 'crlf')
+    .option('-t, --threads <value>', 'Number of worker threads to split the cpu intensive parts in. Defaults to all available CPUs -1. Be mindful that running lots of threads requires lots of memory so if you are getting heap out of memory exceptions try limiting the number of threads')
+    .option('-i, --input <value>', 'Input filename', 'input.csv');
 
   program.parse();
 
-  const { concatenate, input, newline } = program.opts()
+  const { concatenate, input, newline, threads } = program.opts()
 
   if (newline === 'lf') {
     NEW_LINE = '\n'
   }
 
+  if (threads) {
+    const t = parseInt(threads);
+    if (isNaN(t)) throw new Error(`Expected number of threads to be an integer. Found ${threads} instead`)
+    THREADS = t;
+  }
+
   const inputStream = fs.createReadStream(input);
   let content = []
+  let headerRow = null;
 
   const rl = readline.createInterface({
     input: inputStream,
@@ -115,16 +114,26 @@ async function main() {
   });
 
   for await (let line of rl) {
+    // Slight optimization. With large files removing the first line incurs a reindex of the whole array which is very
+    // time consuming
+    if (line.startsWith('#')) {
+      headerRow = line;
+      continue;
+    }
     content.push(line);
   }
   console.info(content.length);
+
   inputStream.close();
 
   try {
-    const [output, tokens, total_balances, tree] = buildMerkle(content, !!concatenate);
+    const [output, tokens, total_balances, tree] = await buildMerkle(content, headerRow, !!concatenate);
     fs.writeFileSync('output_total_balances.txt', `${tokens.map((token, i) => `${token}:${total_balances[i].toString()}`).join(NEW_LINE)}`)
     fs.writeFileSync('output_merkle_root.txt', tree.getRoot().toString("hex"))
-    output.on("end", () => process.exit(0))
+    output.on("end", () => {
+      output.close();
+      process.exit(0);
+    })
   } catch (e) {
     console.error(e);
     process.exit(1);
