@@ -38,11 +38,7 @@ Proof-of-Reserves assessment.
 2) ### Auditor verifies the total user balance and publishes the Merkle Tree and the Merkle Root Hash
 
    After the Merkle Tree is successfully generated, the Merkle Root Hash, the total User Count, and the Total Asset
-   amounts will be calculated and displayed within the tool for the auditor to verify.
-
-   <p align="center">
-    <img src="images/generator.png" alt="" style="width:500px;"/>
-   </P>
+   amounts will be calculated and written to separate files within the tool directory for the auditor to verify.
 
 3) ### Users independently verify their account balance
    After importing the plain text file generated from the Merkle Tree Generator into the Merkle Tree Verifier, users
@@ -124,24 +120,23 @@ plans to add this functionality in the future.
   </p>
 
 
-## Installation
+## How to run
 
-> Install dependencies
+This is a command line only tool. In order to run it you first need to install dependencies using npm or yarn and then
+run node cli --help to see all available command line options.
 
-```shell
-npm install
-```
-
-> Create bundle.js to make it runnable in browser
+Here is a summary of the available options for your convenience:
 
 ```shell
-npx browserify app.js -o bundle.js
-```
+Usage: cli [options]
 
-> To achieve auto build of bundle.js, use watchify as shown below, or use nohup to make watchify command run at background
+Options:
+  -c, --concatenate      If set, compute the leaves as SHA256(user_id,balance1:k,...,balancen:n). Otherwise the calculation is SHA256(SHA256(user_id)SHA256(balance1...balancen))
+  -n, --newline <value>  Sets the type of line endings to expect from the input file. The output file will match this style. Possible options are crlf or lf. (default: "crlf")
+  -t, --threads <value>  Number of worker threads to split the cpu intensive parts in. Defaults to all available CPUs -1. Be mindful that running lots of threads requires lots of memory so if you are getting heap out of memory exceptions try limiting the number of threads
+  -i, --input <value>    Input filename (default: "input.csv")
+  -h, --help             display help for command
 
-```shell
-nohup watchify app.js -o bundle.js -v > nohup.out 2>&1 </dev/null &
 ```
 
 -----------------
