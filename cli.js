@@ -58,7 +58,6 @@ async function buildMerkle(content, headerRow, concatenate=false) {
   //stop the worker threads since we don't need them anymore
   await stop();
 
-
   // build Merkle tree
   const tree = new MerkleTree(res.flat(2), SHA256);
 

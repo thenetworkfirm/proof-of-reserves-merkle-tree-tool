@@ -17,8 +17,14 @@ const jobHandler = () => {
     const [uid, ...balances] = d;
 
     if (concatenate) {
-      // Remove trailing zeroes using https://stackoverflow.com/a/53397618/1231428
-      const sanitized_balances = balances.map(balance => balance.replace(/(\.[0-9]*[1-9])0+$|\.0*$/,"$1"));
+      const sanitized_balances = balances.map(balance => {
+        // Remove trailing zeroes using https://stackoverflow.com/a/53397618/1231428
+        let newBalance = balance.replace(/(\.[0-9]*[1-9])0+$|\.0*$/, "$1")
+        if (!newBalance.includes('.')) {
+          newBalance += '.0';
+        }
+        return newBalance;
+      });
       const string_to_hash = `${uid},${tokens.map((token, i) => [token, sanitized_balances[i]].join(":")).join(",")}`;
       part[i] = SHA256(string_to_hash).toString('hex').substring(0, 16)
 
