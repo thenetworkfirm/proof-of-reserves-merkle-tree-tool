@@ -46,8 +46,9 @@ async function buildMerkle(content, headerRow, concatenate=false) {
     part.forEach(p => {
       const [uid, ...balances] = p.split(',')
       balances.forEach((balance, index) => {
+        let this_balance = Big(balance);
         if (!total_balances[index]) total_balances[index] = Big(0)
-        total_balances[index] = total_balances[index].add(balance);
+        total_balances[index] = total_balances[index].add(this_balance.abs());
       })
     })
     return job(jobHandler, { ctx: { part, columns, concatenate, tokens }})
